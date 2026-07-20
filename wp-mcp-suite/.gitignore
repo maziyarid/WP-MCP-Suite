@@ -1,0 +1,13 @@
+/node_modules/
+/.phpunit.cache/
+/.phpunit.result.cache
+composer.lock
+*.log
+.DS_Store
+/wp-mcp-suite-*.zip
+
+# vendor/ is intentionally NOT ignored: phpoffice/phpword (+ its phpoffice/math
+# dependency) is vendored directly from GitHub releases so this plugin
+# activates without requiring `composer install` first. If you regenerate
+# vendor/ via a real `composer install`, review the diff before committing —
+# a real install may pull newer versions or additional transitive files.
