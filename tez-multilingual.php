@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tez Portfolio Multilingual
  * Description: Lightweight Persian/English routing, SEO and automation safeguards for the Tez thesis portfolio.
- * Version: 0.2.0
+ * Version: 0.2.1
  * Author: MAZ//ID
  * Requires at least: 6.4
  * Requires PHP: 8.1
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Tez_Portfolio_Multilingual {
-	const VERSION          = '0.2.0';
+	const VERSION          = '0.2.1';
 	const META_LANGUAGE    = '_tez_language';
 	const META_TRANSLATION = '_tez_translation_id';
 	const QUERY_LANGUAGE   = 'tez_language';
@@ -47,6 +47,10 @@ final class Tez_Portfolio_Multilingual {
 		add_action( 'wp_head', array( $this, 'print_hreflang' ), 4 );
 		add_filter( 'gettext', array( $this, 'translate_theme_string' ), 20, 3 );
 		add_filter( 'wp_nav_menu_objects', array( $this, 'filter_language_menu_items' ), 20, 2 );
+		add_filter( 'wp_nav_menu_items', array( $this, 'ensure_english_home_menu_item' ), 30, 2 );
+		add_filter( 'theme_mod_teznevise_phone_display', array( $this, 'filter_english_phone' ) );
+		add_filter( 'theme_mod_teznevise_hours', array( $this, 'filter_english_hours' ) );
+		add_filter( 'option_blogname', array( $this, 'filter_english_site_name' ) );
 
 		add_filter( 'post_link', array( $this, 'filter_post_link' ), 20, 3 );
 		add_filter( 'post_type_link', array( $this, 'filter_post_type_link' ), 20, 4 );
@@ -56,6 +60,11 @@ final class Tez_Portfolio_Multilingual {
 		add_filter( 'rank_math/frontend/title', array( $this, 'filter_rank_math_title' ) );
 		add_filter( 'rank_math/frontend/description', array( $this, 'filter_rank_math_description' ) );
 		add_filter( 'rank_math/opengraph/facebook/og_url', array( $this, 'filter_rank_math_og_url' ) );
+		add_filter( 'rank_math/opengraph/facebook/og_title', array( $this, 'filter_rank_math_social_title' ) );
+		add_filter( 'rank_math/opengraph/facebook/og_description', array( $this, 'filter_rank_math_social_description' ) );
+		add_filter( 'rank_math/opengraph/twitter/twitter_title', array( $this, 'filter_rank_math_social_title' ) );
+		add_filter( 'rank_math/opengraph/twitter/twitter_description', array( $this, 'filter_rank_math_social_description' ) );
+		add_filter( 'rank_math/json_ld', array( $this, 'filter_rank_math_json_ld' ), 20, 2 );
 
 		add_action( 'template_redirect', array( $this, 'render_language_sitemap' ), 0 );
 		add_filter( 'robots_txt', array( $this, 'add_sitemaps_to_robots' ), 20, 2 );
@@ -305,6 +314,13 @@ final class Tez_Portfolio_Multilingual {
 			'مطالب جدید'                         => 'Latest articles',
 			'ادامه مطلب'                         => 'Read more',
 			'نتیجه‌ای پیدا نشد.'                 => 'No results found.',
+			'لینک‌های راهنما'                    => 'Guide links',
+			'منوی اصلی'                          => 'Main navigation',
+			'منوی موبایل'                        => 'Mobile navigation',
+			'منو'                                => 'Menu',
+			'نمایش زیرمنو'                       => 'Show submenu',
+			'ورود'                               => 'Sign in',
+			'پروفایل'                            => 'Profile',
 		);
 
 		return isset( $map[ $original ] ) ? $map[ $original ] : $translated;
@@ -336,6 +352,38 @@ final class Tez_Portfolio_Multilingual {
 		return array_values( $items );
 	}
 
+	public function ensure_english_home_menu_item( $items, $args ) {
+		unset( $args );
+		if ( 'en' !== $this->request_language() ) {
+			return $items;
+		}
+
+		$english_home = home_url( '/en/' );
+		if ( false !== strpos( $items, esc_url( $english_home ) ) ) {
+			return $items;
+		}
+
+		$home_item = sprintf(
+			'<li class="menu-item tez-english-home"><a class="nav-link" href="%s" hreflang="en">%s</a></li>',
+			esc_url( $english_home ),
+			esc_html__( 'Home', 'tez-multilingual' )
+		);
+
+		return $home_item . $items;
+	}
+
+	public function filter_english_phone( $phone ) {
+		return 'en' === $this->request_language() ? '+98 930 282 2091' : $phone;
+	}
+
+	public function filter_english_hours( $hours ) {
+		return 'en' === $this->request_language() ? 'Saturday–Thursday, 09:00–21:00' : $hours;
+	}
+
+	public function filter_english_site_name( $name ) {
+		return 'en' === $this->request_language() ? 'Teznevise' : $name;
+	}
+
 	public function filter_post_link( $permalink, $post, $leavename ) {
 		unset( $leavename );
 		return $this->prefix_english_permalink( $permalink, $post );
@@ -360,7 +408,14 @@ final class Tez_Portfolio_Multilingual {
 		$path      = (string) wp_parse_url( $permalink, PHP_URL_PATH );
 		$relative  = '/' . ltrim( preg_replace( '#^' . preg_quote( rtrim( $home_path, '/' ), '#' ) . '#', '', $path ), '/' );
 
-		return home_url( '/en' . $relative );
+		$english_permalink = home_url( '/en' . $relative );
+		$query             = wp_parse_url( $permalink, PHP_URL_QUERY );
+		if ( $query ) {
+			wp_parse_str( $query, $query_args );
+			$english_permalink = add_query_arg( $query_args, $english_permalink );
+		}
+
+		return $english_permalink;
 	}
 
 	public function filter_canonical_redirect( $redirect_url, $requested_url ) {
@@ -395,6 +450,55 @@ final class Tez_Portfolio_Multilingual {
 
 	public function filter_rank_math_og_url( $url ) {
 		return 'en' === $this->request_language() ? $this->filter_rank_math_canonical( $url ) : $url;
+	}
+
+	public function filter_rank_math_social_title( $title ) {
+		return 'en' === $this->request_language() && ! is_singular() ? 'Academic Research Guides | Teznevise' : $title;
+	}
+
+	public function filter_rank_math_social_description( $description ) {
+		return 'en' === $this->request_language() && ! is_singular()
+			? 'Evidence-based guides to thesis writing, research methodology, academic analysis and graduate study.'
+			: $description;
+	}
+
+	public function filter_rank_math_json_ld( $data, $json_ld ) {
+		unset( $json_ld );
+		if ( 'en' !== $this->request_language() || is_singular() || ! is_array( $data ) ) {
+			return $data;
+		}
+
+		$english_home       = home_url( '/en/' );
+		$english_breadcrumb = $english_home . '#breadcrumb';
+		$english_webpage    = $english_home . '#webpage';
+
+		foreach ( $data as &$entity ) {
+			if ( ! is_array( $entity ) ) {
+				continue;
+			}
+
+			$type = isset( $entity['@type'] ) ? (string) $entity['@type'] : '';
+			if ( 'Organization' === $type || 'WebSite' === $type ) {
+				$entity['name'] = 'Teznevise';
+			}
+			if ( 'BreadcrumbList' === $type ) {
+				$entity['@id'] = $english_breadcrumb;
+				if ( isset( $entity['itemListElement'][0]['item'] ) && is_array( $entity['itemListElement'][0]['item'] ) ) {
+					$entity['itemListElement'][0]['item']['@id']  = $english_home;
+					$entity['itemListElement'][0]['item']['name'] = 'Home';
+				}
+			}
+			if ( 'CollectionPage' === $type ) {
+				$entity['@id']       = $english_webpage;
+				$entity['url']       = $english_home;
+				$entity['name']      = 'Academic Research Guides | Teznevise';
+				$entity['inLanguage'] = 'en-US';
+				$entity['breadcrumb'] = array( '@id' => $english_breadcrumb );
+			}
+		}
+		unset( $entity );
+
+		return $data;
 	}
 
 	private function account_features_paused() {
