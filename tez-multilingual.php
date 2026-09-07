@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tez Portfolio Multilingual
  * Description: Lightweight Persian/English routing, SEO and automation safeguards for the Tez thesis portfolio.
- * Version: 0.1.0
+ * Version: 0.2.0
  * Author: MAZ//ID
  * Requires at least: 6.4
  * Requires PHP: 8.1
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Tez_Portfolio_Multilingual {
-	const VERSION          = '0.1.0';
+	const VERSION          = '0.2.0';
 	const META_LANGUAGE    = '_tez_language';
 	const META_TRANSLATION = '_tez_translation_id';
 	const QUERY_LANGUAGE   = 'tez_language';
@@ -45,12 +45,17 @@ final class Tez_Portfolio_Multilingual {
 		add_filter( 'body_class', array( $this, 'filter_body_classes' ) );
 		add_action( 'wp_head', array( $this, 'print_direction_styles' ), 1 );
 		add_action( 'wp_head', array( $this, 'print_hreflang' ), 4 );
+		add_filter( 'gettext', array( $this, 'translate_theme_string' ), 20, 3 );
+		add_filter( 'wp_nav_menu_objects', array( $this, 'filter_language_menu_items' ), 20, 2 );
 
 		add_filter( 'post_link', array( $this, 'filter_post_link' ), 20, 3 );
 		add_filter( 'post_type_link', array( $this, 'filter_post_type_link' ), 20, 4 );
 		add_filter( 'page_link', array( $this, 'filter_page_link' ), 20, 3 );
 		add_filter( 'redirect_canonical', array( $this, 'filter_canonical_redirect' ), 20, 2 );
 		add_filter( 'rank_math/frontend/canonical', array( $this, 'filter_rank_math_canonical' ) );
+		add_filter( 'rank_math/frontend/title', array( $this, 'filter_rank_math_title' ) );
+		add_filter( 'rank_math/frontend/description', array( $this, 'filter_rank_math_description' ) );
+		add_filter( 'rank_math/opengraph/facebook/og_url', array( $this, 'filter_rank_math_og_url' ) );
 
 		add_action( 'template_redirect', array( $this, 'render_language_sitemap' ), 0 );
 		add_filter( 'robots_txt', array( $this, 'add_sitemaps_to_robots' ), 20, 2 );
@@ -63,6 +68,11 @@ final class Tez_Portfolio_Multilingual {
 		add_action( 'manage_pages_custom_column', array( $this, 'render_admin_language_column' ), 10, 2 );
 
 		add_shortcode( 'tez_language_switcher', array( $this, 'render_language_switcher' ) );
+
+		add_action( 'after_setup_theme', array( $this, 'pause_account_features' ), 100 );
+		add_action( 'template_redirect', array( $this, 'redirect_paused_account' ), -10 );
+		add_action( 'admin_menu', array( $this, 'hide_paused_account_admin' ), 999 );
+		add_filter( 'pre_option_users_can_register', array( $this, 'disable_public_registration' ) );
 	}
 
 	public function register_content_meta() {
@@ -254,17 +264,76 @@ final class Tez_Portfolio_Multilingual {
 	}
 
 	public function print_direction_styles() {
-		if ( 'en' !== $this->request_language() ) {
-			return;
-		}
 		?>
 		<style id="tez-multilingual-ltr">
+			<?php if ( $this->account_features_paused() ) : ?>
+			.nav-credits,.nav-account,a[href*="/account/"],a[href*="?tab=profile"]{display:none!important}
+			<?php endif; ?>
+			<?php if ( 'en' === $this->request_language() ) : ?>
 			html[dir="ltr"],html[dir="ltr"] body{direction:ltr;text-align:left}
 			html[dir="ltr"] input,html[dir="ltr"] textarea,html[dir="ltr"] select{direction:ltr;text-align:left}
 			html[dir="ltr"] .menu,html[dir="ltr"] nav ul{direction:ltr}
 			html[dir="ltr"] blockquote{border-right:0;border-left:4px solid currentColor}
+			html[dir="ltr"] .announce-utils,html[dir="ltr"] .nav-quick-actions{display:none!important}
+			<?php endif; ?>
 		</style>
 		<?php
+	}
+
+	public function translate_theme_string( $translated, $original, $domain ) {
+		if ( 'en' !== $this->request_language() || 'teznevise' !== $domain ) {
+			return $translated;
+		}
+
+		$map = array(
+			'رفتن به محتوای اصلی'              => 'Skip to main content',
+			'شنبه تا پنجشنبه، ۹ تا ۲۱'          => 'Saturday–Thursday, 09:00–21:00',
+			'مشاوره محرمانه و تخصصی'             => 'Confidential specialist consultation',
+			'حریم خصوصی'                         => 'Privacy',
+			'بازخورد مشتریان'                    => 'Client feedback',
+			'ثبت درخواست'                        => 'Submit a request',
+			'باز کردن منو'                       => 'Open menu',
+			'بستن منو'                           => 'Close menu',
+			'جستجو'                              => 'Search',
+			'درباره ما'                          => 'About us',
+			'خانه'                               => 'Home',
+			'مقالات'                             => 'Articles',
+			'بلاگ'                               => 'Research guides',
+			'خدمات'                              => 'Services',
+			'ابزارها'                            => 'Research tools',
+			'دانلودها'                           => 'Downloads',
+			'مطالب جدید'                         => 'Latest articles',
+			'ادامه مطلب'                         => 'Read more',
+			'نتیجه‌ای پیدا نشد.'                 => 'No results found.',
+		);
+
+		return isset( $map[ $original ] ) ? $map[ $original ] : $translated;
+	}
+
+	public function filter_language_menu_items( $items, $args ) {
+		unset( $args );
+		$english = 'en' === $this->request_language();
+
+		foreach ( $items as $key => $item ) {
+			$url_path = (string) wp_parse_url( $item->url, PHP_URL_PATH );
+			if ( $this->account_features_paused() && ( false !== strpos( $url_path, '/account/' ) || false !== strpos( $item->url, 'tab=profile' ) ) ) {
+				unset( $items[ $key ] );
+				continue;
+			}
+
+			if ( ! $english ) {
+				continue;
+			}
+
+			$object_id = isset( $item->object_id ) ? absint( $item->object_id ) : 0;
+			$is_english_object = $object_id && 'en' === $this->get_post_language( $object_id );
+			$is_english_url    = preg_match( '#^/en(?:/|$)#', $url_path );
+			if ( ! $is_english_object && ! $is_english_url ) {
+				unset( $items[ $key ] );
+			}
+		}
+
+		return array_values( $items );
 	}
 
 	public function filter_post_link( $permalink, $post, $leavename ) {
@@ -303,8 +372,72 @@ final class Tez_Portfolio_Multilingual {
 		if ( is_singular() ) {
 			return get_permalink( get_queried_object_id() );
 		}
+		if ( 'en' === $this->request_language() ) {
+			return home_url( '/en/' );
+		}
 
 		return $canonical;
+	}
+
+	public function filter_rank_math_title( $title ) {
+		if ( 'en' === $this->request_language() && ! is_singular() ) {
+			return 'Academic Research Guides | Teznevise';
+		}
+		return $title;
+	}
+
+	public function filter_rank_math_description( $description ) {
+		if ( 'en' === $this->request_language() && ! is_singular() ) {
+			return 'Evidence-based guides to thesis writing, research methodology, academic analysis and graduate study.';
+		}
+		return $description;
+	}
+
+	public function filter_rank_math_og_url( $url ) {
+		return 'en' === $this->request_language() ? $this->filter_rank_math_canonical( $url ) : $url;
+	}
+
+	private function account_features_paused() {
+		$host = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
+		return 'teznevise.ir' === preg_replace( '/^www\./', '', $host ) && '0' !== (string) get_option( 'tez_pause_account_features', '1' );
+	}
+
+	public function pause_account_features() {
+		if ( ! $this->account_features_paused() ) {
+			return;
+		}
+
+		remove_action( 'template_redirect', 'teznevise_handle_front_auth', 8 );
+		remove_action( 'user_register', 'teznevise_maybe_welcome_coins' );
+		remove_action( 'comment_post', 'teznevise_award_comment_coins', 10 );
+		remove_action( 'wp_ajax_teznevise_share_reward', 'teznevise_ajax_share_reward' );
+		remove_action( 'personal_options_update', 'teznevise_save_extra_profile_fields' );
+		remove_action( 'edit_user_profile_update', 'teznevise_save_extra_profile_fields' );
+	}
+
+	public function redirect_paused_account() {
+		if ( ! $this->account_features_paused() || is_admin() ) {
+			return;
+		}
+
+		$path = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ), PHP_URL_PATH ) : '';
+		if ( preg_match( '#^/account(?:/|$)#', $path ) ) {
+			header( 'X-Robots-Tag: noindex, nofollow', true );
+			wp_safe_redirect( home_url( '/inquiry/' ), 302, 'Tez feature pause' );
+			exit;
+		}
+	}
+
+	public function hide_paused_account_admin() {
+		if ( ! $this->account_features_paused() ) {
+			return;
+		}
+		remove_submenu_page( 'themes.php', 'teznevise-tezcoin' );
+		remove_submenu_page( 'themes.php', 'teznevise-ledger' );
+	}
+
+	public function disable_public_registration( $value ) {
+		return $this->account_features_paused() ? 0 : $value;
 	}
 
 	public function print_hreflang() {
