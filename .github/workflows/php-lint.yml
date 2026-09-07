@@ -1,0 +1,28 @@
+name: PHP lint
+
+on:
+  push:
+    paths:
+      - "tez-multilingual.php"
+      - ".github/workflows/php-lint.yml"
+  pull_request:
+    paths:
+      - "tez-multilingual.php"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ["8.1", "8.2", "8.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Lint multilingual plugin
+        run: php -l tez-multilingual.php
